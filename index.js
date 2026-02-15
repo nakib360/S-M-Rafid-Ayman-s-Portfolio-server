@@ -1,14 +1,12 @@
 const express = require("express");
 const app = express();
 const cors = require("cors");
-const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb"); // ObjectId add kora hoyeche
+const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb"); 
 const multer = require("multer");
-const fs = require("fs");
-const path = require("path");
-const crypto = require("crypto");
+const cloudinary = require("cloudinary").v2;
+require('dotenv').config();
 
 const PORT = process.env.PORT || 4000;
-const uploadsDir = path.join(__dirname, "uploads");
 const allowedCategories = new Set([
   "cover",
   "logo",
@@ -20,26 +18,15 @@ const allowedCategories = new Set([
 
 app.use(express.json());
 app.use(cors());
-app.use("/uploads/files", express.static(uploadsDir));
 
-if (!fs.existsSync(uploadsDir)) {
-  fs.mkdirSync(uploadsDir, { recursive: true });
-}
-
-const storage = multer.diskStorage({
-  destination: (_req, _file, callback) => {
-    callback(null, uploadsDir);
-  },
-  filename: (_req, file, callback) => {
-    const ext = path.extname(file.originalname || "").toLowerCase();
-    const safeExt = ext || ".jpg";
-    const uniqueName = `${Date.now()}-${crypto.randomBytes(6).toString("hex")}${safeExt}`;
-    callback(null, uniqueName);
-  },
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET,
 });
 
 const upload = multer({
-  storage,
+  storage: multer.memoryStorage(),
   limits: { fileSize: 8 * 1024 * 1024 },
   fileFilter: (_req, file, callback) => {
     if (!file.mimetype || !file.mimetype.startsWith("image/")) {
@@ -49,9 +36,17 @@ const upload = multer({
   },
 });
 
-const uri =
-  process.env.MONGODB_URI ||
-  "mongodb+srv://rafid-ayman:fNKD6OBnFf3g7u1y@cluster0.mvfiisx.mongodb.net/?appName=Cluster0";
+function uploadBufferToCloudinary(buffer, options) {
+  return new Promise((resolve, reject) => {
+    const stream = cloudinary.uploader.upload_stream(options, (error, result) => {
+      if (error) return reject(error);
+      return resolve(result);
+    });
+    stream.end(buffer);
+  });
+}
+
+const uri = process.env.MONGODB_URI;
 
 const client = new MongoClient(uri, {
   serverApi: {
@@ -70,7 +65,6 @@ async function run() {
 
     console.log("Connected to MongoDB!");
 
-    // POST: Order Create
     app.post("/orders", async (req, res) => {
       try {
         const order = req.body;
@@ -129,19 +123,27 @@ async function run() {
         }
 
         if (!category || !allowedCategories.has(category)) {
-          fs.unlink(req.file.path, () => {});
           return res.status(400).send({ message: "Invalid or missing category" });
         }
 
-        const imageUrl = `${req.protocol}://${req.get("host")}/uploads/files/${req.file.filename}`;
+        const folderRoot = process.env.CLOUDINARY_FOLDER || "portfolio";
+        const uploadResult = await uploadBufferToCloudinary(req.file.buffer, {
+          folder: `${folderRoot}/${category}`,
+          resource_type: "image",
+        });
+
+        const imageUrl = uploadResult.secure_url;
         const document = {
           category,
           title: title || req.file.originalname,
           originalName: req.file.originalname,
-          fileName: req.file.filename,
           mimeType: req.file.mimetype,
           size: req.file.size,
           imageUrl,
+          publicId: uploadResult.public_id,
+          width: uploadResult.width,
+          height: uploadResult.height,
+          format: uploadResult.format,
           createdAt: new Date(),
         };
 
@@ -195,12 +197,9 @@ async function run() {
           return res.status(404).send({ message: "Upload not found" });
         }
 
-        const fileName = existingUpload.fileName
-          ? existingUpload.fileName
-          : path.basename(existingUpload.imageUrl || "");
-        const filePath = path.join(uploadsDir, fileName);
-
-        fs.unlink(filePath, () => {});
+        if (existingUpload.publicId) {
+          await cloudinary.uploader.destroy(existingUpload.publicId, { resource_type: "image" });
+        }
 
         return res.send({ success: true, message: "Upload deleted successfully" });
       } catch (error) {
