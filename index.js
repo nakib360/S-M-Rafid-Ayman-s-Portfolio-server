@@ -113,7 +113,6 @@ async function run() {
       }
     });
 
-    // POST: Upload single image (multipart/form-data)
     app.post("/uploads", upload.single("file"), async (req, res) => {
       try {
         const { category, title } = req.body;
