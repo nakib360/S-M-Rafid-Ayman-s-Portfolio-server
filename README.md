@@ -67,5 +67,28 @@ Server runs on `http://localhost:4000` by default.
 3. Start command: `npm start`
 4. Add environment variables from `.env` in Render dashboard.
 
+## Vercel Deployment
+This project is configured for Vercel serverless with `vercel.json`.
+
+1. Push the project to GitHub.
+2. In Vercel dashboard, import the repository.
+3. Set these Environment Variables in Vercel Project Settings:
+   - `MONGODB_URI`
+   - `CLOUDINARY_CLOUD_NAME`
+   - `CLOUDINARY_API_KEY`
+   - `CLOUDINARY_API_SECRET`
+   - `CLOUDINARY_FOLDER` (optional, default: `portfolio`)
+4. Deploy.
+
+After deploy, test:
+- `GET /`
+- `GET /orders`
+- `GET /uploads`
+- `POST /uploads` with `multipart/form-data`
+
+Notes:
+- Database connection is cached across warm invocations to reduce latency.
+- No local disk storage is required for uploads (Cloudinary only).
+
 ## License
 ISC

@@ -56,162 +56,184 @@ const client = new MongoClient(uri, {
   },
 });
 
-async function run() {
-  try {
-    await client.connect();
-    const db = client.db("portfolioDB");
-    const ordersCollection = db.collection("orders");
-    const uploadsCollection = db.collection("uploads");
+let dbCollections;
+let connectPromise;
 
-    console.log("Connected to MongoDB!");
+async function getCollections() {
+  if (dbCollections) return dbCollections;
 
-    app.post("/orders", async (req, res) => {
-      try {
-        const order = req.body;
-        const result = await ordersCollection.insertOne({
-          ...order,
-          isReviewed: false,
-          createdAt: new Date(),
-        });
-        res.status(201).send(result);
-      } catch (error) {
-        res.status(500).send({ message: "Failed to create order", error });
-      }
-    });
-
-    app.get("/orders", async (req, res) => {
-      try {
-        const orders = await ordersCollection.find({}).sort({ createdAt: -1 }).toArray();
-        res.send(orders);
-      } catch (error) {
-        res.status(500).send({ message: "Failed to fetch orders", error });
-      }
-    });
-
-    app.patch("/orders/:id", async (req, res) => {
-      try {
-        const id = req.params.id;
-        const updateData = req.body;
-
-        if (!ObjectId.isValid(id)) {
-          return res.status(400).send({ message: "Invalid order ID" });
-        }
-
-        const result = await ordersCollection.updateOne(
-          { _id: new ObjectId(id) },
-          { $set: updateData }
-        );
-
-        if (result.matchedCount === 0) {
-          return res.status(404).send({ message: "Order not found" });
-        }
-
-        res.send({ success: true, message: "Order updated successfully" });
-      } catch (error) {
-        console.error("Update error:", error);
-        res.status(500).send({ message: "Internal server error" });
-      }
-    });
-
-    app.post("/uploads", upload.single("file"), async (req, res) => {
-      try {
-        const { category, title } = req.body;
-
-        if (!req.file) {
-          return res.status(400).send({ message: "Image file is required" });
-        }
-
-        if (!category || !allowedCategories.has(category)) {
-          return res.status(400).send({ message: "Invalid or missing category" });
-        }
-
-        const folderRoot = process.env.CLOUDINARY_FOLDER || "portfolio";
-        const uploadResult = await uploadBufferToCloudinary(req.file.buffer, {
-          folder: `${folderRoot}/${category}`,
-          resource_type: "image",
-        });
-
-        const imageUrl = uploadResult.secure_url;
-        const document = {
-          category,
-          title: title || req.file.originalname,
-          originalName: req.file.originalname,
-          mimeType: req.file.mimetype,
-          size: req.file.size,
-          imageUrl,
-          publicId: uploadResult.public_id,
-          width: uploadResult.width,
-          height: uploadResult.height,
-          format: uploadResult.format,
-          createdAt: new Date(),
+  if (!connectPromise) {
+    connectPromise = client
+      .connect()
+      .then(() => {
+        const db = client.db("portfolioDB");
+        dbCollections = {
+          ordersCollection: db.collection("orders"),
+          uploadsCollection: db.collection("uploads"),
         };
-
-        const result = await uploadsCollection.insertOne(document);
-
-        res.status(201).send({
-          _id: result.insertedId,
-          id: result.insertedId,
-          title: document.title,
-          category: document.category,
-          imageUrl: document.imageUrl,
-          url: document.imageUrl,
-        });
-      } catch (error) {
-        res.status(500).send({ message: "Failed to upload image", error: error.message });
-      }
-    });
-
-    // GET: Uploaded images (optional category filter)
-    app.get("/uploads", async (req, res) => {
-      try {
-        const query = {};
-        if (req.query.category) {
-          query.category = req.query.category;
-        }
-
-        const uploads = await uploadsCollection.find(query).sort({ createdAt: -1 }).toArray();
-        res.send(uploads);
-      } catch (error) {
-        res.status(500).send({ message: "Failed to fetch uploads", error: error.message });
-      }
-    });
-
-    // DELETE: Remove uploaded image by id
-    app.delete("/uploads/:id", async (req, res) => {
-      try {
-        const id = req.params.id;
-        if (!ObjectId.isValid(id)) {
-          return res.status(400).send({ message: "Invalid upload ID" });
-        }
-
-        const filter = { _id: new ObjectId(id) };
-        const existingUpload = await uploadsCollection.findOne(filter);
-
-        if (!existingUpload) {
-          return res.status(404).send({ message: "Upload not found" });
-        }
-
-        const result = await uploadsCollection.deleteOne(filter);
-        if (result.deletedCount === 0) {
-          return res.status(404).send({ message: "Upload not found" });
-        }
-
-        if (existingUpload.publicId) {
-          await cloudinary.uploader.destroy(existingUpload.publicId, { resource_type: "image" });
-        }
-
-        return res.send({ success: true, message: "Upload deleted successfully" });
-      } catch (error) {
-        return res.status(500).send({ message: "Failed to delete upload", error: error.message });
-      }
-    });
-
-  } catch (err) {
-    console.error(err);
+        console.log("Connected to MongoDB!");
+        return dbCollections;
+      })
+      .catch((error) => {
+        connectPromise = null;
+        throw error;
+      });
   }
+
+  return connectPromise;
 }
-run().catch(console.dir);
+
+app.post("/orders", async (req, res) => {
+  try {
+    const { ordersCollection } = await getCollections();
+    const order = req.body;
+    const result = await ordersCollection.insertOne({
+      ...order,
+      isReviewed: false,
+      createdAt: new Date(),
+    });
+    res.status(201).send(result);
+  } catch (error) {
+    res.status(500).send({ message: "Failed to create order", error: error.message });
+  }
+});
+
+app.get("/orders", async (req, res) => {
+  try {
+    const { ordersCollection } = await getCollections();
+    const orders = await ordersCollection.find({}).sort({ createdAt: -1 }).toArray();
+    res.send(orders);
+  } catch (error) {
+    res.status(500).send({ message: "Failed to fetch orders", error: error.message });
+  }
+});
+
+app.patch("/orders/:id", async (req, res) => {
+  try {
+    const { ordersCollection } = await getCollections();
+    const id = req.params.id;
+    const updateData = req.body;
+
+    if (!ObjectId.isValid(id)) {
+      return res.status(400).send({ message: "Invalid order ID" });
+    }
+
+    const result = await ordersCollection.updateOne(
+      { _id: new ObjectId(id) },
+      { $set: updateData }
+    );
+
+    if (result.matchedCount === 0) {
+      return res.status(404).send({ message: "Order not found" });
+    }
+
+    res.send({ success: true, message: "Order updated successfully" });
+  } catch (error) {
+    console.error("Update error:", error);
+    res.status(500).send({ message: "Internal server error" });
+  }
+});
+
+app.post("/uploads", upload.single("file"), async (req, res) => {
+  try {
+    const { uploadsCollection } = await getCollections();
+    const { category, title } = req.body;
+
+    if (!req.file) {
+      return res.status(400).send({ message: "Image file is required" });
+    }
+
+    if (!category || !allowedCategories.has(category)) {
+      return res.status(400).send({ message: "Invalid or missing category" });
+    }
+
+    const folderRoot = process.env.CLOUDINARY_FOLDER || "portfolio";
+    const uploadResult = await uploadBufferToCloudinary(req.file.buffer, {
+      folder: `${folderRoot}/${category}`,
+      resource_type: "image",
+    });
+
+    const imageUrl = uploadResult.secure_url;
+    const document = {
+      category,
+      title: title || req.file.originalname,
+      originalName: req.file.originalname,
+      mimeType: req.file.mimetype,
+      size: req.file.size,
+      imageUrl,
+      publicId: uploadResult.public_id,
+      width: uploadResult.width,
+      height: uploadResult.height,
+      format: uploadResult.format,
+      createdAt: new Date(),
+    };
+
+    const result = await uploadsCollection.insertOne(document);
+
+    res.status(201).send({
+      _id: result.insertedId,
+      id: result.insertedId,
+      title: document.title,
+      category: document.category,
+      imageUrl: document.imageUrl,
+      url: document.imageUrl,
+    });
+  } catch (error) {
+    res.status(500).send({ message: "Failed to upload image", error: error.message });
+  }
+});
+
+// GET: Uploaded images (optional category filter)
+app.get("/uploads", async (req, res) => {
+  try {
+    const { uploadsCollection } = await getCollections();
+    const query = {};
+    if (req.query.category) {
+      query.category = req.query.category;
+    }
+
+    const uploads = await uploadsCollection.find(query).sort({ createdAt: -1 }).toArray();
+    res.send(uploads);
+  } catch (error) {
+    res.status(500).send({ message: "Failed to fetch uploads", error: error.message });
+  }
+});
+
+// DELETE: Remove uploaded image by id
+app.delete("/uploads/:id", async (req, res) => {
+  try {
+    const { uploadsCollection } = await getCollections();
+    const id = req.params.id;
+    if (!ObjectId.isValid(id)) {
+      return res.status(400).send({ message: "Invalid upload ID" });
+    }
+
+    const filter = { _id: new ObjectId(id) };
+    const existingUpload = await uploadsCollection.findOne(filter);
+
+    if (!existingUpload) {
+      return res.status(404).send({ message: "Upload not found" });
+    }
+
+    const result = await uploadsCollection.deleteOne(filter);
+    if (result.deletedCount === 0) {
+      return res.status(404).send({ message: "Upload not found" });
+    }
+
+    if (existingUpload.publicId) {
+      await cloudinary.uploader.destroy(existingUpload.publicId, { resource_type: "image" });
+    }
+
+    return res.send({ success: true, message: "Upload deleted successfully" });
+  } catch (error) {
+    return res.status(500).send({ message: "Failed to delete upload", error: error.message });
+  }
+});
 
 app.get("/", (req, res) => res.send("Server is running"));
 
-app.listen(PORT, () => console.log(`http://localhost:${PORT}/`));
+if (require.main === module) {
+  app.listen(PORT, () => console.log(`http://localhost:${PORT}/`));
+}
+
+module.exports = app;
