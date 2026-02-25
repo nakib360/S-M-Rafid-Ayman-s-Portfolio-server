@@ -199,30 +199,6 @@ app.get("/uploads", async (req, res) => {
   }
 });
 
-// GET: Uploaded images grouped by category
-app.get("/uploads/category-wise", async (_req, res) => {
-  try {
-    const { uploadsCollection } = await getCollections();
-    const uploads = await uploadsCollection.find({}).sort({ createdAt: -1 }).toArray();
-    const grouped = {};
-
-    for (const category of allowedCategories) {
-      grouped[category] = [];
-    }
-
-    for (const item of uploads) {
-      if (!grouped[item.category]) {
-        grouped[item.category] = [];
-      }
-      grouped[item.category].push(item);
-    }
-
-    res.send(grouped);
-  } catch (error) {
-    res.status(500).send({ message: "Failed to fetch category-wise uploads", error: error.message });
-  }
-});
-
 // DELETE: Remove uploaded image by id
 app.delete("/uploads/:id", async (req, res) => {
   try {
