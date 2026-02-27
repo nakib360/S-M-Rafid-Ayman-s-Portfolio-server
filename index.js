@@ -14,6 +14,7 @@ const allowedCategories = new Set([
   "print",
   "social",
   "thumbnail",
+  "brands"
 ]);
 
 app.use(express.json());
