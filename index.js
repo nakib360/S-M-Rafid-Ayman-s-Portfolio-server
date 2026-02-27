@@ -71,6 +71,7 @@ async function getCollections() {
         dbCollections = {
           ordersCollection: db.collection("orders"),
           uploadsCollection: db.collection("uploads"),
+          reviewsCollection: db.collection("reviews"),
         };
         console.log("Connected to MongoDB!");
         return dbCollections;
@@ -228,6 +229,94 @@ app.delete("/uploads/:id", async (req, res) => {
     return res.send({ success: true, message: "Upload deleted successfully" });
   } catch (error) {
     return res.status(500).send({ message: "Failed to delete upload", error: error.message });
+  }
+});
+
+// Reviews
+app.get("/reviews", async (_req, res) => {
+  try {
+    const { reviewsCollection } = await getCollections();
+    const reviews = await reviewsCollection.find({}).sort({ createdAt: -1 }).toArray();
+    return res.send(reviews);
+  } catch (error) {
+    return res.status(500).send({ message: "Failed to load reviews", error: error.message });
+  }
+});
+
+app.post("/reviews", async (req, res) => {
+  try {
+    const { reviewsCollection } = await getCollections();
+    const name = (req.body?.name || "").trim();
+    const role = (req.body?.role || "").trim();
+    const quote = (req.body?.quote || "").trim();
+
+    if (!name || !role || !quote) {
+      return res.status(400).send({ message: "Name, role and quote are required" });
+    }
+
+    const document = { name, role, quote, createdAt: new Date() };
+    const result = await reviewsCollection.insertOne(document);
+
+    return res.status(201).send({
+      ...document,
+      _id: result.insertedId,
+      id: result.insertedId,
+    });
+  } catch (error) {
+    return res.status(500).send({ message: "Failed to save review", error: error.message });
+  }
+});
+
+app.patch("/reviews/:id", async (req, res) => {
+  try {
+    const { reviewsCollection } = await getCollections();
+    const id = req.params.id;
+
+    if (!ObjectId.isValid(id)) {
+      return res.status(400).send({ message: "Invalid review ID" });
+    }
+
+    const updates = {};
+    if (typeof req.body?.name === "string") updates.name = req.body.name.trim();
+    if (typeof req.body?.role === "string") updates.role = req.body.role.trim();
+    if (typeof req.body?.quote === "string") updates.quote = req.body.quote.trim();
+
+    if (!Object.keys(updates).length) {
+      return res.status(400).send({ message: "No valid fields provided to update" });
+    }
+
+    const result = await reviewsCollection.updateOne(
+      { _id: new ObjectId(id) },
+      { $set: updates }
+    );
+
+    if (result.matchedCount === 0) {
+      return res.status(404).send({ message: "Review not found" });
+    }
+
+    return res.send({ success: true, message: "Review updated successfully" });
+  } catch (error) {
+    return res.status(500).send({ message: "Failed to update review", error: error.message });
+  }
+});
+
+app.delete("/reviews/:id", async (req, res) => {
+  try {
+    const { reviewsCollection } = await getCollections();
+    const id = req.params.id;
+
+    if (!ObjectId.isValid(id)) {
+      return res.status(400).send({ message: "Invalid review ID" });
+    }
+
+    const result = await reviewsCollection.deleteOne({ _id: new ObjectId(id) });
+    if (result.deletedCount === 0) {
+      return res.status(404).send({ message: "Review not found" });
+    }
+
+    return res.send({ success: true, message: "Review deleted successfully" });
+  } catch (error) {
+    return res.status(500).send({ message: "Failed to delete review", error: error.message });
   }
 });
 
