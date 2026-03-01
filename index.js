@@ -72,6 +72,7 @@ async function getCollections() {
           ordersCollection: db.collection("orders"),
           uploadsCollection: db.collection("uploads"),
           reviewsCollection: db.collection("reviews"),
+          linksCollection: db.collection("links"),
         };
         console.log("Connected to MongoDB!");
         return dbCollections;
@@ -317,6 +318,104 @@ app.delete("/reviews/:id", async (req, res) => {
     return res.send({ success: true, message: "Review deleted successfully" });
   } catch (error) {
     return res.status(500).send({ message: "Failed to delete review", error: error.message });
+  }
+});
+
+
+
+// Links (contact/social)
+app.get("/links", async (_req, res) => {
+  try {
+    const { linksCollection } = await getCollections();
+    const latest = await linksCollection
+      .find({})
+      .sort({ createdAt: -1 })
+      .limit(1)
+      .toArray();
+
+    if (!latest.length) {
+      return res.send(null);
+    }
+
+    return res.send(latest[0]);
+  } catch (error) {
+    return res.status(500).send({ message: "Failed to fetch links", error: error.message });
+  }
+});
+
+app.post("/links", async (req, res) => {
+  try {
+    const { linksCollection } = await getCollections();
+    const { email, facebook, whatsapp } = req.body || {};
+
+    if (!email && !facebook && !whatsapp) {
+      return res.status(400).send({ message: "At least one link (email/facebook/whatsapp) is required" });
+    }
+
+    const document = {
+      email: email || null,
+      facebook: facebook || null,
+      whatsapp: whatsapp || null,
+      createdAt: new Date(),
+    };
+
+    const result = await linksCollection.insertOne(document);
+    return res.status(201).send({ ...document, _id: result.insertedId, id: result.insertedId });
+  } catch (error) {
+    return res.status(500).send({ message: "Failed to create links entry", error: error.message });
+  }
+});
+
+app.put("/links/:id", async (req, res) => {
+  try {
+    const { linksCollection } = await getCollections();
+    const id = req.params.id;
+
+    if (!ObjectId.isValid(id)) {
+      return res.status(400).send({ message: "Invalid links ID" });
+    }
+
+    const updates = {};
+    if (req.body?.email !== undefined) updates.email = req.body.email;
+    if (req.body?.facebook !== undefined) updates.facebook = req.body.facebook;
+    if (req.body?.whatsapp !== undefined) updates.whatsapp = req.body.whatsapp;
+
+    if (!Object.keys(updates).length) {
+      return res.status(400).send({ message: "No fields provided to update" });
+    }
+
+    const result = await linksCollection.updateOne(
+      { _id: new ObjectId(id) },
+      { $set: updates }
+    );
+
+    if (result.matchedCount === 0) {
+      return res.status(404).send({ message: "Links entry not found" });
+    }
+
+    return res.send({ success: true, message: "Links updated successfully" });
+  } catch (error) {
+    return res.status(500).send({ message: "Failed to update links entry", error: error.message });
+  }
+});
+
+app.delete("/links/:id", async (req, res) => {
+  try {
+    const { linksCollection } = await getCollections();
+    const id = req.params.id;
+
+    if (!ObjectId.isValid(id)) {
+      return res.status(400).send({ message: "Invalid links ID" });
+    }
+
+    const result = await linksCollection.deleteOne({ _id: new ObjectId(id) });
+    if (result.deletedCount === 0) {
+      return res.status(404).send({ message: "Links entry not found" });
+    }
+
+    return res.send({ success: true, message: "Links entry deleted successfully" });
+  } catch (error) {
+    return res.status(500).send({ message: "Failed to delete links entry", error: error.message });
   }
 });
 
