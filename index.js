@@ -346,16 +346,21 @@ app.get("/links", async (_req, res) => {
 app.post("/links", async (req, res) => {
   try {
     const { linksCollection } = await getCollections();
-    const { email, facebook, whatsapp } = req.body || {};
+    const { email, facebook, whatsapp, form } = req.body || {};
 
-    if (!email && !facebook && !whatsapp) {
-      return res.status(400).send({ message: "At least one link (email/facebook/whatsapp) is required" });
-    }
+
+    if (!email && !facebook && !whatsapp && !form) {
+  return res.status(400).send({
+    message: "At least one link (email/facebook/whatsapp/form) is required",
+  });
+}
+
 
     const document = {
       email: email || null,
       facebook: facebook || null,
       whatsapp: whatsapp || null,
+      form: form || null,
       createdAt: new Date(),
     };
 
@@ -379,6 +384,7 @@ app.put("/links/:id", async (req, res) => {
     if (req.body?.email !== undefined) updates.email = req.body.email;
     if (req.body?.facebook !== undefined) updates.facebook = req.body.facebook;
     if (req.body?.whatsapp !== undefined) updates.whatsapp = req.body.whatsapp;
+    if (req.body?.form !== undefined) updates.form = req.body.form;
 
     if (!Object.keys(updates).length) {
       return res.status(400).send({ message: "No fields provided to update" });
